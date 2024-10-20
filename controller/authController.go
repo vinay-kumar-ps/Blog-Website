@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com.vinay-kumar-ps/blogbackend/database"
 	"github.com.vinay-kumar-ps/blogbackend/models"
+	"github.com.vinay-kumar-ps/blogbackend/util"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 // ValidateEmail checks if the given email is in a valid format
@@ -27,7 +31,7 @@ func Register(c *fiber.Ctx) error {
 		fmt.Println("Unable to parse body:", err)
 		c.Status(400)
 		return c.JSON(fiber.Map{
-			"Message": "Invalid request body",
+			"message": "Invalid request body",
 		})
 	}
 
@@ -36,7 +40,7 @@ func Register(c *fiber.Ctx) error {
 	if !ok || len(password) < 6 {
 		c.Status(400)
 		return c.JSON(fiber.Map{
-			"Message": "Password must be at least 6 characters",
+			"message": "Password must be at least 6 characters",
 		})
 	}
 
@@ -45,7 +49,7 @@ func Register(c *fiber.Ctx) error {
 	if !ok || !ValidateEmail(strings.TrimSpace(email)) {
 		c.Status(400)
 		return c.JSON(fiber.Map{
-			"Message": "Invalid email address",
+			"message": "Invalid email address",
 		})
 	}
 
@@ -54,7 +58,7 @@ func Register(c *fiber.Ctx) error {
 	if userData.Id != 0 {
 		c.Status(400)
 		return c.JSON(fiber.Map{
-			"Message": "Email address already exists",
+			"message": "Email address already exists",
 		})
 	}
 
@@ -71,7 +75,7 @@ func Register(c *fiber.Ctx) error {
 		log.Println("Error hashing password:", err)
 		c.Status(500)
 		return c.JSON(fiber.Map{
-			"Message": "Failed to hash password",
+			"message": "Failed to hash password",
 		})
 	}
 
@@ -80,7 +84,7 @@ func Register(c *fiber.Ctx) error {
 		log.Println("Error creating user:", err)
 		c.Status(500)
 		return c.JSON(fiber.Map{
-			"Message": "Failed to create user",
+			"message": "Failed to create user",
 		})
 	}
 
@@ -91,3 +95,49 @@ func Register(c *fiber.Ctx) error {
 		"message": "Account created successfully",
 	})
 }
+
+func Login(c *fiber.Ctx) error {
+	var data map[string]string
+
+	// Parse the request body
+	if err := c.BodyParser(&data); err != nil {
+		fmt.Println("Unable to parse body:", err)
+		c.Status(400)
+		return c.JSON(fiber.Map{
+			"message": "Invalid request body",
+		})
+	}
+	var user models.User
+	database.DB.Where("email=?", data["email"]).First(&user)
+	if user.Id == 0 {
+		c.Status(404)
+		return c.JSON(fiber.Map{
+			"message": "Email Address Doesnt Exist,Kindly create an account",
+		})
+	}
+	if err := user.ComparePassword(data["password"]); err != nil {
+		c.Status(400)
+		return c.JSON(fiber.Map{
+			"message": "Incorrect  Password",
+		})
+	}
+	token, err := util.GenerateJwt(strconv.Itoa(int(user.Id)))
+	if err != nil {
+		c.Status(fiber.StatusInternalServerError)
+		return nil
+	}
+	cookie := fiber.Cookie{
+		Name:     "jwt",
+		Value:    token,
+		Expires:  time.Now().Add(time.Hour * 24),
+		HTTPOnly: true,
+	}
+	c.Cookie(&cookie)
+	return c.JSON(fiber.Map{
+		"message": "You have suucessfully loggined",
+		"user":    user,
+	})
+}
+	type Claims struct{
+		jwt.StandardClaims
+	}
